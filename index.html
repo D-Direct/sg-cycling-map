@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#0f172a">
+    <title>SG Cycling Paths — Interactive Map</title>
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+    <!-- Leaflet CSS with jsdelivr primary, cdnjs fallback -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"
+          onerror="this.onerror=null;this.href='https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css';" />
+
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap">
+
+    <!-- Leaflet JS with fallback. If primary CDN fails, the onerror handler loads the fallback. -->
+    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"
+            onerror="loadLeafletFallback()"></script>
+    <script>
+        function loadLeafletFallback() {
+            console.warn('Primary Leaflet CDN failed, loading fallback...');
+            const s = document.createElement('script');
+            s.src = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js';
+            s.onerror = () => { document.getElementById('fatal-error').style.display = 'flex'; };
+            document.head.appendChild(s);
+        }
+    </script>
+
+    <style>
+        :root {
+            --surface: rgba(255, 255, 255, 0.98);
+            --surface-solid: #ffffff;
+            --text: #0f172a;
+            --text-muted: #64748b;
+            --border: #e2e8f0;
+            --accent: #0ea5e9;
+            --lta: #0ea5e9;
+            --town: #f59e0b;
+            --hdb: #10b981;
+            --other: #ec4899;
+            --warn-bg: #fef3c7;
+            --warn-border: #fcd34d;
+            --warn-text: #92400e;
+            --shadow-lg: 0 10px 40px rgba(15, 23, 42, 0.15);
+            --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.08);
+            --radius: 14px;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body {
+            height: 100%;
+            overflow: hidden;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            color: var(--text);
+            -webkit-font-smoothing: antialiased;
+        }
+        #map { position: absolute; inset: 0; z-index: 1; background: #e8eef4; }
+
+        #fatal-error {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 9999;
+            background: #0f172a;
+            color: white;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            text-align: center;
+        }
+        #fatal-error h2 { font-size: 18px; margin-bottom: 8px; }
+        #fatal-error p { font-size: 14px; opacity: 0.8; max-width: 380px; line-height: 1.5; }
+
+        #loader {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 2000;
+            background: var(--surface-solid);
+            padding: 20px 28px;
+            border-radius: var(--radius);
+            box-shadow: var(--shadow-lg);
+            border: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            transition: opacity 0.3s;
+        }
+        #loader.hidden { opacity: 0; pointer-events: none; }
+        .spinner {
+            width: 32px; height: 32px;
+            border: 3px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        #loader-text { font-size: 13px; color: var(--text-muted); font-weight: 500; }
+
+        #data-banner {
+            position: absolute;
+            top: 16px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1100;
+            background: var(--surface);
+            backdrop-filter: blur(20px);
+            padding: 8px 14px;
+            border-radius: 999px;
+            box-shadow: var(--shadow-md);
+            border: 1px solid var(--border);
+            font-size: 12px;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            max-width: calc(100% - 32px);
+        }
+        #data-banner.warning {
+            background: var(--warn-bg);
+            border-color: var(--warn-border);
+            color: var(--warn-text);
+        }
+        #data-banner .dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: var(--hdb);
+            flex-shrink: 0;
+        }
+        #data-banner.warning .dot { background: #f59e0b; }
+        #data-banner button {
+            background: none;
+            border: none;
+            font-family: inherit;
+            font-size: 12px;
+            font-weight: 600;
+            color: inherit;
+            text-decoration: underline;
+            cursor: pointer;
+            padding: 0;
+            margin-left: 4px;
+        }
+
+        .control-panel {
+            position: absolute;
+            top: 64px;
+            left: 16px;
+            width: 320px;
+            background: var(--surface);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow-lg);
+            border: 1px solid var(--border);
+            z-index: 1000;
+            overflow: hidden;
+        }
+        .panel-header {
+            padding: 18px 20px 14px;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            color: white;
+        }
+        .panel-header h1 {
+            font-size: 17px;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .panel-header p { font-size: 12px; opacity: 0.7; margin-top: 3px; font-weight: 400; }
+        .panel-body { padding: 16px 20px 18px; }
+
+        .field-label {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin-bottom: 8px;
+            display: block;
+        }
+        .select-wrapper { position: relative; margin-bottom: 16px; }
+        select {
+            width: 100%;
+            padding: 11px 36px 11px 14px;
+            border: 1.5px solid var(--border);
+            border-radius: 10px;
+            font-size: 14px;
+            font-family: inherit;
+            font-weight: 500;
+            color: var(--text);
+            background: var(--surface-solid);
+            cursor: pointer;
+            appearance: none;
+            -webkit-appearance: none;
+            transition: border-color 0.15s, box-shadow 0.15s;
+        }
+        select:hover { border-color: #cbd5e1; }
+        select:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.15);
+        }
+        .select-wrapper::after {
+            content: '';
+            position: absolute;
+            right: 14px;
+            top: 50%;
+            width: 8px; height: 8px;
+            border-right: 2px solid var(--text-muted);
+            border-bottom: 2px solid var(--text-muted);
+            transform: translateY(-75%) rotate(45deg);
+            pointer-events: none;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+        .stat-card {
+            background: #f8fafc;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 10px 12px;
+        }
+        .stat-label {
+            font-size: 10px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+        .stat-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 20px;
+            font-weight: 600;
+            color: var(--text);
+            margin-top: 2px;
+            line-height: 1.1;
+        }
+        .stat-unit { font-size: 11px; font-weight: 500; color: var(--text-muted); margin-left: 2px; }
+
+        .button-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+        .reset-btn {
+            padding: 10px;
+            background: var(--text);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 600;
+            font-family: inherit;
+            cursor: pointer;
+            transition: background 0.15s, transform 0.1s;
+        }
+        .reset-btn:hover { background: #1e293b; }
+        .reset-btn:active { transform: scale(0.98); }
+        .refresh-btn {
+            padding: 10px 14px;
+            background: var(--surface-solid);
+            color: var(--text);
+            border: 1.5px solid var(--border);
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 600;
+            font-family: inherit;
+            cursor: pointer;
+            transition: border-color 0.15s;
+        }
+        .refresh-btn:hover { border-color: var(--accent); }
+
+        .legend {
+            position: absolute;
+            bottom: 20px;
+            right: 16px;
+            background: var(--surface);
+            backdrop-filter: blur(20px);
+            padding: 14px 16px;
+            border-radius: var(--radius);
+            box-shadow: var(--shadow-md);
+            border: 1px solid var(--border);
+            z-index: 1000;
+            max-width: 220px;
+        }
+        .legend h4 {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin-bottom: 8px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+        .legend-item:last-child { margin-bottom: 0; }
+        .legend-color { width: 22px; height: 4px; border-radius: 2px; flex-shrink: 0; }
+
+        .leaflet-popup-content-wrapper {
+            border-radius: 12px;
+            box-shadow: var(--shadow-lg);
+            border: 1px solid var(--border);
+        }
+        .leaflet-popup-content {
+            margin: 14px 16px;
+            font-family: 'Inter', sans-serif;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+        .info-popup strong { color: var(--text); font-size: 14px; display: block; margin-bottom: 6px; }
+        .info-popup .meta {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--text-muted);
+            font-size: 12px;
+            margin-top: 3px;
+        }
+        .info-popup .agency-tag {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: white;
+            margin-top: 6px;
+        }
+
+        .mobile-handle { display: none; }
+
+        @media (max-width: 720px) {
+            #data-banner { top: 12px; font-size: 11px; padding: 6px 12px; }
+            .control-panel {
+                top: auto;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                width: 100%;
+                border-radius: 20px 20px 0 0;
+                max-height: 72vh;
+                transform: translateY(calc(100% - 160px));
+                transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1);
+                display: flex;
+                flex-direction: column;
+            }
+            .control-panel.expanded { transform: translateY(0); }
+            .mobile-handle {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                padding: 10px 0 4px;
+                cursor: pointer;
+                user-select: none;
+                -webkit-user-select: none;
+                flex-shrink: 0;
+            }
+            .mobile-handle::before {
+                content: '';
+                width: 40px; height: 4px;
+                background: #cbd5e1;
+                border-radius: 2px;
+            }
+            .panel-header { padding: 10px 20px 12px; border-radius: 0; }
+            .panel-header h1 { font-size: 15px; }
+            .panel-header p { font-size: 11px; }
+            .panel-body { overflow-y: auto; -webkit-overflow-scrolling: touch; flex: 1; }
+            select { padding: 13px 36px 13px 14px; font-size: 15px; }
+            .legend {
+                top: 50px;
+                bottom: auto;
+                right: 12px;
+                left: 12px;
+                padding: 10px 14px;
+                max-width: none;
+                display: flex;
+                flex-wrap: wrap;
+                gap: 6px 14px;
+                align-items: center;
+            }
+            .legend h4 { width: 100%; margin-bottom: 2px; font-size: 10px; }
+            .legend-item { font-size: 11px; margin-bottom: 0; }
+            .legend-color { width: 16px; height: 3px; }
+            .stat-value { font-size: 18px; }
+            .leaflet-control-zoom { display: none; }
+        }
+
+        .leaflet-control-zoom a {
+            background: var(--surface-solid) !important;
+            color: var(--text) !important;
+            border: 1px solid var(--border) !important;
+        }
+        .leaflet-control-scale-line { font-family: 'JetBrains Mono', monospace; font-size: 10px; }
+    </style>
+</head>
+<body>
+    <div id="fatal-error">
+        <h2>⚠️ Unable to load map library</h2>
+        <p>Leaflet couldn't be loaded from any CDN. Please check your internet connection and refresh the page.</p>
+    </div>
+
+    <div id="map"></div>
+
+    <div id="loader">
+        <div class="spinner"></div>
+        <div id="loader-text">Fetching cycling paths from data.gov.sg…</div>
+    </div>
+
+    <div id="data-banner" style="display:none;">
+        <span class="dot"></span>
+        <span id="banner-text">Live data</span>
+    </div>
+
+    <div class="legend">
+        <h4>Maintained by</h4>
+        <div class="legend-item"><span class="legend-color" style="background: var(--lta);"></span>LTA</div>
+        <div class="legend-item"><span class="legend-color" style="background: var(--town);"></span>Town Council</div>
+        <div class="legend-item"><span class="legend-color" style="background: var(--hdb);"></span>HDB / JTC</div>
+        <div class="legend-item"><span class="legend-color" style="background: var(--other);"></span>Other</div>
+    </div>
+
+    <div class="control-panel" id="panel">
+        <div class="mobile-handle" id="mobileHandle" aria-label="Toggle panel"></div>
+        <div class="panel-header">
+            <h1>🚲 SG Cycling Paths</h1>
+            <p>Interactive network explorer</p>
+        </div>
+        <div class="panel-body">
+            <label class="field-label" for="districtFilter">Filter by area</label>
+            <div class="select-wrapper">
+                <select id="districtFilter" aria-label="Filter by district">
+                    <option value="all">All areas</option>
+                </select>
+            </div>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-label">Paths</div>
+                    <div class="stat-value" id="visibleCount">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Total length</div>
+                    <div class="stat-value"><span id="totalLength">0</span><span class="stat-unit">km</span></div>
+                </div>
+            </div>
+            <div class="button-row">
+                <button class="reset-btn" id="resetBtn">Reset map view</button>
+                <button class="refresh-btn" id="refreshBtn" title="Reload data from API">↻</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================================
+        // CONFIG
+        // ============================================================
+        const DATASET_ID = 'd_8f468b25193f64be8a16fa7d8f60f553';
+        const API_URL = `https://api-open.data.gov.sg/v1/public/api/datasets/${DATASET_ID}/poll-download`;
+
+        // Public CORS proxies (tried in order). These are free community services —
+        // fine for a demo site, but for production use a Cloudflare Worker.
+        const CORS_PROXIES = [
+            (url) => `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
+            (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
+        ];
+
+        // ============================================================
+        // FALLBACK SAMPLE DATA (used if API fetch fails — e.g. CORS blocked)
+        // ============================================================
+        const FALLBACK_DATA = {
+            "type": "FeatureCollection",
+            "features": [
+                {"type":"Feature","geometry":{"type":"LineString","coordinates":[[103.92296109054301,1.3283089196449078],[103.92292330511239,1.328299608792863],[103.92282345330962,1.3282999714658625],[103.92279834594626,1.3283258796815116]]},"properties":{"CYL_PATH":"Bedok","AGENCY_MAINT":"Land Transport Authority","SHAPE_1.LEN":19.4437335776265}},
+                {"type":"Feature","geometry":{"type":"LineString","coordinates":[[103.91918567326472,1.3275686810117378],[103.91888015418483,1.3273075792901812],[103.91864046693507,1.3271027375102855],[103.91853095970406,1.326957042001752]]},"properties":{"CYL_PATH":"Bedok","AGENCY_MAINT":"Land Transport Authority","SHAPE_1.LEN":104.109641033713}},
+                {"type":"Feature","geometry":{"type":"LineString","coordinates":[[103.73944197339632,1.3318297155030974],[103.73938790790808,1.3318856537292108],[103.73923787038002,1.3319902710516278]]},"properties":{"CYL_PATH":"Jurong Lake District - Taman Jurong","AGENCY_MAINT":"Land Transport Authority","SHAPE_1.LEN":28.9424839154151}},
+                {"type":"Feature","geometry":{"type":"LineString","coordinates":[[103.87086106560845,1.3379557756687153],[103.87088519941767,1.3379772693241618],[103.87092276237595,1.337952383352035],[103.87094843849361,1.337939940711582]]},"properties":{"CYL_PATH":"Toa Payoh","AGENCY_MAINT":"Land Transport Authority","SHAPE_1.LEN":11.7626076048855}},
+                {"type":"Feature","geometry":{"type":"LineString","coordinates":[[103.69735831923448,1.3501532219513996],[103.69786192604514,1.3501935504164715]]},"properties":{"CYL_PATH":"Jurong West","AGENCY_MAINT":"LTA (Others)","SHAPE_1.LEN":56.2230758041571}},
+                {"type":"Feature","geometry":{"type":"LineString","coordinates":[[103.93596666791801,1.3768512082694921],[103.93594219941461,1.376673699194867]]},"properties":{"CYL_PATH":"Pasir Ris","AGENCY_MAINT":"Town Council","SHAPE_1.LEN":20.2095383109527}},
+                {"type":"Feature","geometry":{"type":"LineString","coordinates":[[103.83127117445598,1.4306132648748728],[103.83177240271488,1.4306292146333297]]},"properties":{"CYL_PATH":"Yishun","AGENCY_MAINT":"Land Transport Authority","SHAPE_1.LEN":55.8098485013833}},
+                {"type":"Feature","geometry":{"type":"LineString","coordinates":[[103.92020043650889,1.401741438588998],[103.92078786692592,1.4012310221543167]]},"properties":{"CYL_PATH":"Punggol","AGENCY_MAINT":"Land Transport Authority","SHAPE_1.LEN":90.7152487288274}},
+                {"type":"Feature","geometry":{"type":"LineString","coordinates":[[103.76161257710056,1.3884570320357916],[103.76121221306602,1.38829622305856]]},"properties":{"CYL_PATH":"Bukit Panjang","AGENCY_MAINT":"Housing Development Board","SHAPE_1.LEN":47.9724940025011}},
+                {"type":"Feature","geometry":{"type":"LineString","coordinates":[[103.82982856238382,1.4472112020268273],[103.83069755439436,1.445670640465458]]},"properties":{"CYL_PATH":"Sembawang","AGENCY_MAINT":"Land Transport Authority","SHAPE_1.LEN":198.755642753122}},
+                {"type":"Feature","geometry":{"type":"LineString","coordinates":[[103.8407240528728,1.3671534166486141],[103.8413589974212,1.366932245977429]]},"properties":{"CYL_PATH":"Ang Mo Kio","AGENCY_MAINT":"Land Transport Authority","SHAPE_1.LEN":74.7741348444099}},
+                {"type":"Feature","geometry":{"type":"LineString","coordinates":[[103.8563088480527,1.275174906690445],[103.85677225757186,1.275796430882094]]},"properties":{"CYL_PATH":"Marina Bay","AGENCY_MAINT":"Land Transport Authority","SHAPE_1.LEN":96.6424555295682}}
+            ]
+        };
+
+        // ============================================================
+        // DATA FETCH — Tries direct first, falls back through CORS proxies
+        // ============================================================
+        async function fetchWithProxyFallback(url) {
+            // 1. Try direct fetch first (works if API is publicly CORS-enabled)
+            try {
+                const resp = await fetch(url);
+                if (resp.ok) return resp;
+                throw new Error(`HTTP ${resp.status}`);
+            } catch (e) {
+                console.log(`Direct fetch failed for ${url.substring(0, 60)}…, trying proxies`);
+            }
+
+            // 2. Try each proxy in order
+            let lastErr;
+            for (const buildProxyUrl of CORS_PROXIES) {
+                try {
+                    const proxyUrl = buildProxyUrl(url);
+                    const resp = await fetch(proxyUrl);
+                    if (resp.ok) {
+                        console.log(`✓ Proxy succeeded: ${proxyUrl.split('?')[0]}`);
+                        return resp;
+                    }
+                    lastErr = new Error(`Proxy returned HTTP ${resp.status}`);
+                } catch (e) {
+                    lastErr = e;
+                }
+            }
+            throw lastErr || new Error('All proxies failed');
+        }
+
+        async function fetchCyclingData() {
+            // Step 1: poll-download returns a signed URL
+            const pollResp = await fetchWithProxyFallback(API_URL);
+            const pollJson = await pollResp.json();
+            if (pollJson.code !== 0) throw new Error(pollJson.errMsg || 'API returned non-zero code');
+
+            const signedUrl = pollJson.data && pollJson.data.url;
+            if (!signedUrl) throw new Error('No download URL returned by API');
+
+            // Step 2: fetch the actual GeoJSON (may or may not need proxy)
+            const dataResp = await fetchWithProxyFallback(signedUrl);
+            const geojson = await dataResp.json();
+
+            if (!geojson.type || !Array.isArray(geojson.features)) {
+                throw new Error('Invalid GeoJSON structure');
+            }
+            return geojson;
+        }
+
+        // ============================================================
+        // HELPERS — SHAPE_1.LEN key has a DOT, MUST use bracket access
+        // ============================================================
+        const getLen = (props) => {
+            const v = props && props['SHAPE_1.LEN'];
+            return (v !== undefined && v !== null) ? parseFloat(v) : 0;
+        };
+
+        const AGENCY_COLORS = {
+            lta: '#0ea5e9',
+            town: '#f59e0b',
+            hdb: '#10b981',
+            other: '#ec4899',
+            unknown: '#94a3b8'
+        };
+
+        function getAgencyKey(agency) {
+            if (!agency) return 'unknown';
+            const a = agency.toLowerCase();
+            if (a.includes('land transport authority') || a.includes('lta')) return 'lta';
+            if (a.includes('town council')) return 'town';
+            if (a.includes('housing development board') || a.includes('jurong town corporation')) return 'hdb';
+            return 'other';
+        }
+        function getAgencyColor(agency) { return AGENCY_COLORS[getAgencyKey(agency)]; }
+        function getAgencyShort(agency) {
+            if (!agency) return 'Unknown';
+            const map = {
+                'LTA (Others)': 'LTA',
+                'Town Council (Others)': 'Town Council',
+                'Jurong Town Corporation (Others)': 'JTC',
+                'Housing Development Board': 'HDB',
+                'Land Transport Authority': 'LTA'
+            };
+            return map[agency] || agency;
+        }
+        function formatKm(meters) {
+            const km = meters / 1000;
+            if (km < 1) return km.toFixed(3);
+            if (km < 100) return km.toFixed(2);
+            return km.toFixed(1);
+        }
+        function getTotalLength(features) {
+            return features.reduce((sum, f) => sum + getLen(f.properties), 0);
+        }
+
+        // ============================================================
+        // STATE
+        // ============================================================
+        let map = null;
+        let currentLayer = null;
+        let allFeatures = [];
+
+        // ============================================================
+        // MAP INIT
+        // ============================================================
+        function initMap() {
+            map = L.map('map', {
+                zoomControl: true,
+                attributionControl: true
+            }).setView([1.3521, 103.8198], 12);
+
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; CARTO | Data: data.gov.sg',
+                subdomains: 'abcd',
+                maxZoom: 19,
+                minZoom: 10
+            }).addTo(map);
+
+            L.control.scale({ metric: true, imperial: false, position: 'bottomleft' }).addTo(map);
+        }
+
+        // ============================================================
+        // RENDER
+        // ============================================================
+        function populateDropdown(features) {
+            const selectEl = document.getElementById('districtFilter');
+            while (selectEl.options.length > 1) selectEl.remove(1);
+
+            const districts = new Set();
+            features.forEach(f => {
+                if (f.properties && f.properties.CYL_PATH) districts.add(f.properties.CYL_PATH);
+            });
+            const sorted = Array.from(districts).sort();
+
+            sorted.forEach(district => {
+                const option = document.createElement('option');
+                option.value = district;
+                const count = features.filter(f => f.properties.CYL_PATH === district).length;
+                option.textContent = `${district} (${count})`;
+                selectEl.appendChild(option);
+            });
+            selectEl.options[0].textContent = `All areas (${features.length.toLocaleString()})`;
+        }
+
+        function updateMap(filterDistrict) {
+            if (!map) return;
+            if (currentLayer) {
+                map.removeLayer(currentLayer);
+                currentLayer = null;
+            }
+
+            const filtered = filterDistrict === 'all'
+                ? allFeatures
+                : allFeatures.filter(f => f.properties.CYL_PATH === filterDistrict);
+
+            document.getElementById('visibleCount').textContent = filtered.length.toLocaleString();
+            document.getElementById('totalLength').textContent = formatKm(getTotalLength(filtered));
+
+            if (filtered.length === 0) return;
+
+            const geoJsonLayer = L.geoJSON({
+                type: 'FeatureCollection',
+                features: filtered
+            }, {
+                style: (feature) => ({
+                    color: getAgencyColor(feature.properties.AGENCY_MAINT),
+                    weight: 4,
+                    opacity: 0.9,
+                    lineCap: 'round',
+                    lineJoin: 'round'
+                }),
+                onEachFeature: (feature, layer) => {
+                    const props = feature.properties;
+                    const lengthM = getLen(props);
+                    const color = AGENCY_COLORS[getAgencyKey(props.AGENCY_MAINT)];
+                    layer.bindPopup(`
+                        <div class="info-popup">
+                            <strong>${props.CYL_PATH || 'Unnamed Path'}</strong>
+                            <div class="meta">📏 ${lengthM.toFixed(1)} m (${formatKm(lengthM)} km)</div>
+                            <span class="agency-tag" style="background:${color}">
+                                ${getAgencyShort(props.AGENCY_MAINT)}
+                            </span>
+                        </div>
+                    `);
+                    layer.on('mouseover', () => layer.setStyle({ weight: 6, opacity: 1 }));
+                    layer.on('mouseout', () => geoJsonLayer.resetStyle(layer));
+                }
+            });
+            currentLayer = geoJsonLayer.addTo(map);
+
+            if (filterDistrict !== 'all') {
+                try {
+                    const bounds = geoJsonLayer.getBounds();
+                    if (bounds.isValid()) map.fitBounds(bounds, { padding: [60, 60], maxZoom: 17 });
+                } catch (e) { console.warn('Bounds error:', e); }
+            }
+        }
+
+        // ============================================================
+        // UI STATE HELPERS
+        // ============================================================
+        function showLoader(text) {
+            const loader = document.getElementById('loader');
+            document.getElementById('loader-text').textContent = text;
+            loader.classList.remove('hidden');
+        }
+        function hideLoader() { document.getElementById('loader').classList.add('hidden'); }
+        function showBanner(html, isWarning) {
+            const banner = document.getElementById('data-banner');
+            document.getElementById('banner-text').innerHTML = html;
+            banner.classList.toggle('warning', !!isWarning);
+            banner.style.display = 'flex';
+        }
+
+        // ============================================================
+        // LOAD DATA (with graceful fallback)
+        // ============================================================
+        async function loadData() {
+            showLoader('Fetching cycling paths from data.gov.sg…');
+            try {
+                const geojson = await fetchCyclingData();
+                allFeatures = geojson.features;
+                populateDropdown(allFeatures);
+                updateMap('all');
+                showBanner(`✓ Live data — ${allFeatures.length.toLocaleString()} paths loaded`, false);
+                console.log(`✅ Loaded ${allFeatures.length} paths from data.gov.sg API`);
+            } catch (err) {
+                console.warn('⚠️ API fetch failed, using sample data:', err);
+                allFeatures = FALLBACK_DATA.features;
+                populateDropdown(allFeatures);
+                updateMap('all');
+                showBanner(
+                    `⚠ Using sample data (${allFeatures.length} paths) — API fetch blocked. <button id="retryBtn">Retry</button>`,
+                    true
+                );
+                const retryBtn = document.getElementById('retryBtn');
+                if (retryBtn) retryBtn.addEventListener('click', loadData);
+            } finally {
+                hideLoader();
+            }
+        }
+
+        // ============================================================
+        // WIRE UP CONTROLS
+        // ============================================================
+        function wireUpControls() {
+            const selectEl = document.getElementById('districtFilter');
+            const panel = document.getElementById('panel');
+
+            selectEl.addEventListener('change', (e) => {
+                updateMap(e.target.value);
+                if (window.innerWidth <= 720) panel.classList.remove('expanded');
+            });
+
+            document.getElementById('resetBtn').addEventListener('click', () => {
+                selectEl.value = 'all';
+                updateMap('all');
+                map.setView([1.3521, 103.8198], 12);
+            });
+
+            document.getElementById('refreshBtn').addEventListener('click', loadData);
+
+            const handle = document.getElementById('mobileHandle');
+            const header = panel.querySelector('.panel-header');
+            const togglePanel = () => panel.classList.toggle('expanded');
+            handle.addEventListener('click', togglePanel);
+            header.addEventListener('click', () => {
+                if (window.innerWidth <= 720) togglePanel();
+            });
+        }
+
+        // ============================================================
+        // BOOTSTRAP — wait for Leaflet, then init
+        // ============================================================
+        function waitForLeaflet(attempt = 0) {
+            if (typeof L !== 'undefined') {
+                initMap();
+                wireUpControls();
+                loadData();
+                return;
+            }
+            if (attempt > 50) {  // ~5 seconds
+                document.getElementById('fatal-error').style.display = 'flex';
+                return;
+            }
+            setTimeout(() => waitForLeaflet(attempt + 1), 100);
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => waitForLeaflet());
+        } else {
+            waitForLeaflet();
+        }
+    </script>
+</body>
+</html>
