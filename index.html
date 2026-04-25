@@ -415,7 +415,7 @@
 
     <div id="loader">
         <div class="spinner"></div>
-        <div id="loader-text">Fetching cycling paths from data.gov.sg…</div>
+        <div id="loader-text">Loading cycling paths…</div>
     </div>
 
     <div id="data-banner" style="display:none;">
@@ -456,7 +456,7 @@
             </div>
             <div class="button-row">
                 <button class="reset-btn" id="resetBtn">Reset map view</button>
-                <button class="refresh-btn" id="refreshBtn" title="Reload data from API">↻</button>
+                <button class="refresh-btn" id="refreshBtn" title="Reload data file">↻</button>
             </div>
         </div>
     </div>
@@ -465,15 +465,9 @@
         // ============================================================
         // CONFIG
         // ============================================================
-        const DATASET_ID = 'd_8f468b25193f64be8a16fa7d8f60f553';
-        const API_URL = `https://api-open.data.gov.sg/v1/public/api/datasets/${DATASET_ID}/poll-download`;
-
-        // Public CORS proxies (tried in order). These are free community services —
-        // fine for a demo site, but for production use a Cloudflare Worker.
-        const CORS_PROXIES = [
-            (url) => `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
-            (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`
-        ];
+        // Data is loaded from a local GeoJSON file in the same folder.
+        // To refresh: download fresh data from data.gov.sg and replace this file.
+        const DATA_FILE = 'cycling_paths.geojson';
 
         // ============================================================
         // FALLBACK SAMPLE DATA (used if API fetch fails — e.g. CORS blocked)
@@ -497,52 +491,21 @@
         };
 
         // ============================================================
-        // DATA FETCH — Tries direct first, falls back through CORS proxies
+        // DATA FETCH — Loads from local GeoJSON file (no API, no CORS)
         // ============================================================
-        async function fetchWithProxyFallback(url) {
-            // 1. Try direct fetch first (works if API is publicly CORS-enabled)
-            try {
-                const resp = await fetch(url);
-                if (resp.ok) return resp;
-                throw new Error(`HTTP ${resp.status}`);
-            } catch (e) {
-                console.log(`Direct fetch failed for ${url.substring(0, 60)}…, trying proxies`);
-            }
-
-            // 2. Try each proxy in order
-            let lastErr;
-            for (const buildProxyUrl of CORS_PROXIES) {
-                try {
-                    const proxyUrl = buildProxyUrl(url);
-                    const resp = await fetch(proxyUrl);
-                    if (resp.ok) {
-                        console.log(`✓ Proxy succeeded: ${proxyUrl.split('?')[0]}`);
-                        return resp;
-                    }
-                    lastErr = new Error(`Proxy returned HTTP ${resp.status}`);
-                } catch (e) {
-                    lastErr = e;
-                }
-            }
-            throw lastErr || new Error('All proxies failed');
-        }
-
         async function fetchCyclingData() {
-            // Step 1: poll-download returns a signed URL
-            const pollResp = await fetchWithProxyFallback(API_URL);
-            const pollJson = await pollResp.json();
-            if (pollJson.code !== 0) throw new Error(pollJson.errMsg || 'API returned non-zero code');
-
-            const signedUrl = pollJson.data && pollJson.data.url;
-            if (!signedUrl) throw new Error('No download URL returned by API');
-
-            // Step 2: fetch the actual GeoJSON (may or may not need proxy)
-            const dataResp = await fetchWithProxyFallback(signedUrl);
-            const geojson = await dataResp.json();
+            const resp = await fetch(DATA_FILE, { cache: 'no-cache' });
+            if (!resp.ok) {
+                throw new Error(`Could not load ${DATA_FILE} (HTTP ${resp.status})`);
+            }
+            // Capture last-modified date from response headers (used in banner)
+            const lastMod = resp.headers.get('last-modified');
+            const geojson = await resp.json();
 
             if (!geojson.type || !Array.isArray(geojson.features)) {
                 throw new Error('Invalid GeoJSON structure');
             }
+            geojson._lastModified = lastMod;
             return geojson;
         }
 
@@ -712,28 +675,40 @@
         }
 
         // ============================================================
-        // LOAD DATA (with graceful fallback)
+        // LOAD DATA
         // ============================================================
+        function formatDate(httpDate) {
+            if (!httpDate) return null;
+            try {
+                const d = new Date(httpDate);
+                return d.toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' });
+            } catch (e) { return null; }
+        }
+
         async function loadData() {
-            showLoader('Fetching cycling paths from data.gov.sg…');
+            showLoader('Loading cycling paths…');
             try {
                 const geojson = await fetchCyclingData();
                 allFeatures = geojson.features;
                 populateDropdown(allFeatures);
                 updateMap('all');
-                showBanner(`✓ Live data — ${allFeatures.length.toLocaleString()} paths loaded`, false);
-                console.log(`✅ Loaded ${allFeatures.length} paths from data.gov.sg API`);
+
+                const dateStr = formatDate(geojson._lastModified);
+                const bannerText = dateStr
+                    ? `✓ ${allFeatures.length.toLocaleString()} paths · Updated ${dateStr}`
+                    : `✓ ${allFeatures.length.toLocaleString()} paths loaded`;
+                showBanner(bannerText, false);
+                console.log(`✅ Loaded ${allFeatures.length} paths from ${DATA_FILE}`);
             } catch (err) {
-                console.warn('⚠️ API fetch failed, using sample data:', err);
+                console.error('⚠️ Data load failed:', err);
                 allFeatures = FALLBACK_DATA.features;
                 populateDropdown(allFeatures);
                 updateMap('all');
                 showBanner(
-                    `⚠ Using sample data (${allFeatures.length} paths) — API fetch blocked. <button id="retryBtn">Retry</button>`,
+                    `⚠ Data file missing — showing ${allFeatures.length} sample paths. ` +
+                    `Upload <code style="background:rgba(0,0,0,0.06);padding:1px 4px;border-radius:3px;font-size:11px;">${DATA_FILE}</code> to fix.`,
                     true
                 );
-                const retryBtn = document.getElementById('retryBtn');
-                if (retryBtn) retryBtn.addEventListener('click', loadData);
             } finally {
                 hideLoader();
             }
