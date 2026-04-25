@@ -246,6 +246,95 @@
         }
         .stat-unit { font-size: 11px; font-weight: 500; color: var(--text-muted); margin-left: 2px; }
 
+        /* ===== Layer sections (cycling + PCN blocks) ===== */
+        .layer-section {
+            background: #f8fafc;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 12px;
+            margin-bottom: 10px;
+        }
+
+        .layer-toggle {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+            user-select: none;
+            margin-bottom: 10px;
+        }
+        .layer-toggle input[type="checkbox"] {
+            appearance: none;
+            -webkit-appearance: none;
+            width: 36px;
+            height: 20px;
+            background: #cbd5e1;
+            border-radius: 999px;
+            position: relative;
+            cursor: pointer;
+            transition: background 0.2s;
+            flex-shrink: 0;
+        }
+        .layer-toggle input[type="checkbox"]::after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 16px;
+            height: 16px;
+            background: white;
+            border-radius: 50%;
+            transition: transform 0.2s;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+        }
+        .layer-toggle input[type="checkbox"]:checked { background: var(--accent); }
+        .layer-toggle input[type="checkbox"]:checked::after { transform: translateX(16px); }
+
+        .toggle-swatch {
+            width: 18px;
+            height: 4px;
+            border-radius: 2px;
+            flex-shrink: 0;
+        }
+        .toggle-swatch.dashed {
+            height: 0;
+            border-top: 3px dashed currentColor;
+            background: none !important;
+            color: #a855f7;
+        }
+        .toggle-label {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .select-wrapper.compact { margin-bottom: 8px; }
+        .select-wrapper.compact select {
+            padding: 8px 32px 8px 12px;
+            font-size: 13px;
+        }
+
+        .mini-stats {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+        .mini-stats b {
+            color: var(--text);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            margin-right: 2px;
+        }
+
+        /* Dashed style for legend swatches representing PCN */
+        .legend-color.dashed {
+            height: 0 !important;
+            border-top: 3px dashed currentColor;
+            background: none !important;
+        }
+
         .button-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
         .reset-btn {
             padding: 10px;
@@ -287,6 +376,8 @@
             border: 1px solid var(--border);
             z-index: 1000;
             max-width: 220px;
+            max-height: calc(100vh - 60px);
+            overflow-y: auto;
         }
         .legend h4 {
             font-size: 11px;
@@ -424,39 +515,66 @@
     </div>
 
     <div class="legend">
-        <h4>Maintained by</h4>
+        <h4>Cycling paths · by agency</h4>
         <div class="legend-item"><span class="legend-color" style="background: var(--lta);"></span>LTA</div>
         <div class="legend-item"><span class="legend-color" style="background: var(--town);"></span>Town Council</div>
         <div class="legend-item"><span class="legend-color" style="background: var(--hdb);"></span>HDB / JTC</div>
         <div class="legend-item"><span class="legend-color" style="background: var(--other);"></span>Other</div>
+        <h4 style="margin-top: 10px;">Park Connectors · by loop</h4>
+        <div class="legend-item"><span class="legend-color dashed" style="color: #8b5cf6;"></span>Central Urban</div>
+        <div class="legend-item"><span class="legend-color dashed" style="color: #06b6d4;"></span>Eastern Coastal</div>
+        <div class="legend-item"><span class="legend-color dashed" style="color: #0891b2;"></span>NE Riverine</div>
+        <div class="legend-item"><span class="legend-color dashed" style="color: #a855f7;"></span>Northern Explorer</div>
+        <div class="legend-item"><span class="legend-color dashed" style="color: #dc2626;"></span>Southern Ridges</div>
+        <div class="legend-item"><span class="legend-color dashed" style="color: #be185d;"></span>Western Adventure</div>
     </div>
 
     <div class="control-panel" id="panel">
         <div class="mobile-handle" id="mobileHandle" aria-label="Toggle panel"></div>
         <div class="panel-header">
-            <h1>🚲 SG Cycling Paths</h1>
-            <p>Interactive network explorer</p>
+            <h1>🚲 SG Cycling &amp; PCN</h1>
+            <p>Cycling paths + Park Connector Network</p>
         </div>
         <div class="panel-body">
-            <label class="field-label" for="districtFilter">Filter by area</label>
-            <div class="select-wrapper">
-                <select id="districtFilter" aria-label="Filter by district">
-                    <option value="all">All areas</option>
-                </select>
-            </div>
-            <div class="stats-grid">
-                <div class="stat-card">
-                    <div class="stat-label">Paths</div>
-                    <div class="stat-value" id="visibleCount">0</div>
+            <!-- CYCLING PATHS LAYER -->
+            <div class="layer-section">
+                <label class="layer-toggle">
+                    <input type="checkbox" id="cyclingToggle" checked>
+                    <span class="toggle-swatch" style="background: var(--lta);"></span>
+                    <span class="toggle-label">Cycling Paths</span>
+                </label>
+                <div class="select-wrapper compact">
+                    <select id="districtFilter" aria-label="Filter cycling paths by area">
+                        <option value="all">All areas</option>
+                    </select>
                 </div>
-                <div class="stat-card">
-                    <div class="stat-label">Total length</div>
-                    <div class="stat-value"><span id="totalLength">0</span><span class="stat-unit">km</span></div>
+                <div class="mini-stats">
+                    <span><b id="cyclingCount">0</b> paths</span>
+                    <span><b id="cyclingLength">0</b> km</span>
                 </div>
             </div>
+
+            <!-- PCN LAYER -->
+            <div class="layer-section">
+                <label class="layer-toggle">
+                    <input type="checkbox" id="pcnToggle" checked>
+                    <span class="toggle-swatch dashed" style="color: #a855f7;"></span>
+                    <span class="toggle-label">Park Connectors</span>
+                </label>
+                <div class="select-wrapper compact">
+                    <select id="pcnLoopFilter" aria-label="Filter park connectors by loop">
+                        <option value="all">All loops</option>
+                    </select>
+                </div>
+                <div class="mini-stats">
+                    <span><b id="pcnCount">0</b> segments</span>
+                    <span><b id="pcnLength">0</b> km</span>
+                </div>
+            </div>
+
             <div class="button-row">
-                <button class="reset-btn" id="resetBtn">Reset map view</button>
-                <button class="refresh-btn" id="refreshBtn" title="Reload data file">↻</button>
+                <button class="reset-btn" id="resetBtn">Reset</button>
+                <button class="refresh-btn" id="refreshBtn" title="Reload data files">↻</button>
             </div>
         </div>
     </div>
@@ -465,9 +583,12 @@
         // ============================================================
         // CONFIG
         // ============================================================
-        // Data is loaded from a local GeoJSON file in the same folder.
-        // To refresh: download fresh data from data.gov.sg and replace this file.
-        const DATA_FILE = 'cycling_paths.geojson';
+        // Data is loaded from local GeoJSON files in the same folder.
+        // To refresh: download fresh data from data.gov.sg and replace.
+        const DATA_FILES = {
+            cycling: 'cycling_paths.geojson',
+            pcn: 'park_connectors.geojson'
+        };
 
         // ============================================================
         // FALLBACK SAMPLE DATA (used if API fetch fails — e.g. CORS blocked)
@@ -493,21 +614,18 @@
         // ============================================================
         // DATA FETCH — Loads from local GeoJSON file (no API, no CORS)
         // ============================================================
-        async function fetchCyclingData() {
-            const resp = await fetch(DATA_FILE, { cache: 'no-cache' });
+        async function fetchGeoJsonFile(path, normalizer) {
+            const resp = await fetch(path, { cache: 'no-cache' });
             if (!resp.ok) {
-                throw new Error(`Could not load ${DATA_FILE} (HTTP ${resp.status})`);
+                throw new Error(`Could not load ${path} (HTTP ${resp.status})`);
             }
             const lastMod = resp.headers.get('last-modified');
             const geojson = await resp.json();
 
             if (!geojson.type || !Array.isArray(geojson.features)) {
-                throw new Error('Invalid GeoJSON structure');
+                throw new Error(`Invalid GeoJSON structure in ${path}`);
             }
-
-            // Normalize each feature so the rest of the code doesn't have to
-            // care which schema/format the file uses
-            geojson.features = geojson.features.map(normalizeFeature);
+            geojson.features = geojson.features.map(normalizer);
             geojson._lastModified = lastMod;
             return geojson;
         }
@@ -532,25 +650,38 @@
             return out;
         }
 
-        function normalizeFeature(feature) {
+        function normalizeCyclingFeature(feature) {
             const p = feature.properties || {};
-            // If Description exists (real LTA dataset), parse the HTML table out
             const fromDesc = p.Description ? parseDescriptionHtml(p.Description) : {};
-
-            // Build a unified properties object. Prefer flat fields, fall back
-            // to parsed Description fields, then fall back to other common names.
             const merged = {
                 ...p,
                 CYL_PATH: p.CYL_PATH || fromDesc.CYL_PATH || p.NAME || p.name || null,
                 AGENCY_MAINT: p.AGENCY_MAINT || fromDesc.AGENCY_MAINT || null,
                 'SHAPE_1.LEN': p['SHAPE_1.LEN'] || fromDesc['SHAPE_1.LEN'] || null
             };
-
-            // If still no length, compute it from the geometry
             if (!merged['SHAPE_1.LEN']) {
                 merged['SHAPE_1.LEN'] = computeGeometryLength(feature.geometry);
             }
             return { ...feature, properties: merged };
+        }
+
+        // PCN dataset has clean flat properties (PARK, PCN_LOOP, SHAPE.LEN).
+        // We just normalize length to a number and leave the rest alone.
+        function normalizePCNFeature(feature) {
+            const p = feature.properties || {};
+            const lenRaw = p['SHAPE.LEN'];
+            const len = (lenRaw !== undefined && lenRaw !== null)
+                ? parseFloat(lenRaw)
+                : computeGeometryLength(feature.geometry);
+            return {
+                ...feature,
+                properties: {
+                    ...p,
+                    PARK: p.PARK || 'Unnamed Connector',
+                    PCN_LOOP: p.PCN_LOOP || 'Unknown Loop',
+                    _length: len
+                }
+            };
         }
 
         // Haversine distance between two [lng, lat] points, in metres
@@ -593,6 +724,22 @@
             unknown: '#94a3b8'
         };
 
+        // PCN Loop colour palette — distinct purple/red/teal range so it doesn't
+        // visually clash with the cycling-path agency colours (blue/amber/green/pink).
+        const PCN_LOOP_COLORS = {
+            'Central Urban Loop':         '#8b5cf6', // violet
+            'Eastern Coastal Loop':       '#06b6d4', // cyan
+            'North Eastern Riverine Loop':'#0891b2', // deep cyan
+            'Northern Explorer Loop':     '#a855f7', // purple
+            'Southern Ridges Loop':       '#dc2626', // red
+            'Urban Central Loop':         '#7c3aed', // deep violet
+            'Western Adventure Loop':     '#be185d'  // magenta
+        };
+        const PCN_DEFAULT_COLOR = '#a855f7';
+        function getPCNColor(loop) {
+            return PCN_LOOP_COLORS[loop] || PCN_DEFAULT_COLOR;
+        }
+
         function getAgencyKey(agency) {
             if (!agency) return 'unknown';
             const a = agency.toLowerCase();
@@ -627,8 +774,12 @@
         // STATE
         // ============================================================
         let map = null;
-        let currentLayer = null;
-        let allFeatures = [];
+        let cyclingLayer = null;       // Leaflet layer for cycling paths
+        let pcnLayer = null;            // Leaflet layer for park connectors
+        let cyclingFeatures = [];       // All cycling features (raw, normalized)
+        let pcnFeatures = [];           // All PCN features (raw, normalized)
+        const layerVisible = { cycling: true, pcn: true };
+        const filterValue   = { cycling: 'all', pcn: 'all' };
 
         // ============================================================
         // MAP INIT
@@ -650,48 +801,62 @@
         }
 
         // ============================================================
-        // RENDER
+        // DROPDOWN POPULATION
         // ============================================================
-        function populateDropdown(features) {
+        function populateCyclingDropdown(features) {
             const selectEl = document.getElementById('districtFilter');
             while (selectEl.options.length > 1) selectEl.remove(1);
 
-            const districts = new Set();
+            const counts = {};
             features.forEach(f => {
-                if (f.properties && f.properties.CYL_PATH) districts.add(f.properties.CYL_PATH);
+                const k = f.properties.CYL_PATH;
+                if (k) counts[k] = (counts[k] || 0) + 1;
             });
-            const sorted = Array.from(districts).sort();
-
-            sorted.forEach(district => {
+            Object.keys(counts).sort().forEach(d => {
                 const option = document.createElement('option');
-                option.value = district;
-                const count = features.filter(f => f.properties.CYL_PATH === district).length;
-                option.textContent = `${district} (${count})`;
+                option.value = d;
+                option.textContent = `${d} (${counts[d]})`;
                 selectEl.appendChild(option);
             });
             selectEl.options[0].textContent = `All areas (${features.length.toLocaleString()})`;
         }
 
-        function updateMap(filterDistrict) {
-            if (!map) return;
-            if (currentLayer) {
-                map.removeLayer(currentLayer);
-                currentLayer = null;
-            }
+        function populatePCNDropdown(features) {
+            const selectEl = document.getElementById('pcnLoopFilter');
+            while (selectEl.options.length > 1) selectEl.remove(1);
 
-            const filtered = filterDistrict === 'all'
-                ? allFeatures
-                : allFeatures.filter(f => f.properties.CYL_PATH === filterDistrict);
+            const counts = {};
+            features.forEach(f => {
+                const k = f.properties.PCN_LOOP;
+                if (k) counts[k] = (counts[k] || 0) + 1;
+            });
+            Object.keys(counts).sort().forEach(loop => {
+                const option = document.createElement('option');
+                option.value = loop;
+                option.textContent = `${loop} (${counts[loop]})`;
+                selectEl.appendChild(option);
+            });
+            selectEl.options[0].textContent = `All loops (${features.length.toLocaleString()})`;
+        }
 
-            document.getElementById('visibleCount').textContent = filtered.length.toLocaleString();
-            document.getElementById('totalLength').textContent = formatKm(getTotalLength(filtered));
+        // ============================================================
+        // RENDER LAYERS
+        // ============================================================
+        function renderCyclingLayer() {
+            if (cyclingLayer) { map.removeLayer(cyclingLayer); cyclingLayer = null; }
 
-            if (filtered.length === 0) return;
+            const filter = filterValue.cycling;
+            const filtered = filter === 'all'
+                ? cyclingFeatures
+                : cyclingFeatures.filter(f => f.properties.CYL_PATH === filter);
 
-            const geoJsonLayer = L.geoJSON({
-                type: 'FeatureCollection',
-                features: filtered
-            }, {
+            // Update cycling stats card
+            document.getElementById('cyclingCount').textContent = filtered.length.toLocaleString();
+            document.getElementById('cyclingLength').textContent = formatKm(getTotalLength(filtered));
+
+            if (!layerVisible.cycling || filtered.length === 0) return;
+
+            const layer = L.geoJSON({ type: 'FeatureCollection', features: filtered }, {
                 style: (feature) => ({
                     color: getAgencyColor(feature.properties.AGENCY_MAINT),
                     weight: 4,
@@ -699,25 +864,21 @@
                     lineCap: 'round',
                     lineJoin: 'round'
                 }),
-                // For Point features (e.g. fallback if a point dataset is loaded),
-                // render small coloured circles rather than default pin markers.
-                pointToLayer: (feature, latlng) => {
-                    return L.circleMarker(latlng, {
-                        radius: 5,
-                        color: getAgencyColor(feature.properties.AGENCY_MAINT),
-                        fillColor: getAgencyColor(feature.properties.AGENCY_MAINT),
-                        fillOpacity: 0.7,
-                        weight: 2
-                    });
-                },
-                onEachFeature: (feature, layer) => {
+                pointToLayer: (feature, latlng) => L.circleMarker(latlng, {
+                    radius: 5,
+                    color: getAgencyColor(feature.properties.AGENCY_MAINT),
+                    fillColor: getAgencyColor(feature.properties.AGENCY_MAINT),
+                    fillOpacity: 0.7,
+                    weight: 2
+                }),
+                onEachFeature: (feature, l) => {
                     const props = feature.properties;
                     const lengthM = getLen(props);
                     const color = AGENCY_COLORS[getAgencyKey(props.AGENCY_MAINT)];
                     const lengthLine = lengthM > 0
                         ? `<div class="meta">📏 ${lengthM.toFixed(1)} m (${formatKm(lengthM)} km)</div>`
                         : '';
-                    layer.bindPopup(`
+                    l.bindPopup(`
                         <div class="info-popup">
                             <strong>${props.CYL_PATH || props.NAME || 'Unnamed'}</strong>
                             ${lengthLine}
@@ -726,20 +887,72 @@
                             </span>
                         </div>
                     `);
-                    if (layer.setStyle) {
-                        layer.on('mouseover', () => layer.setStyle({ weight: 6, opacity: 1 }));
-                        layer.on('mouseout', () => geoJsonLayer.resetStyle(layer));
+                    if (l.setStyle) {
+                        l.on('mouseover', () => l.setStyle({ weight: 6, opacity: 1 }));
+                        l.on('mouseout', () => layer.resetStyle(l));
                     }
                 }
             });
-            currentLayer = geoJsonLayer.addTo(map);
+            cyclingLayer = layer.addTo(map);
 
-            if (filterDistrict !== 'all') {
-                try {
-                    const bounds = geoJsonLayer.getBounds();
-                    if (bounds.isValid()) map.fitBounds(bounds, { padding: [60, 60], maxZoom: 17 });
-                } catch (e) { console.warn('Bounds error:', e); }
+            // Fit bounds when filtering by district (single layer focus)
+            if (filter !== 'all' && !pcnLayer) {
+                try { map.fitBounds(layer.getBounds(), { padding: [60, 60], maxZoom: 17 }); }
+                catch (e) {}
             }
+        }
+
+        function renderPCNLayer() {
+            if (pcnLayer) { map.removeLayer(pcnLayer); pcnLayer = null; }
+
+            const filter = filterValue.pcn;
+            const filtered = filter === 'all'
+                ? pcnFeatures
+                : pcnFeatures.filter(f => f.properties.PCN_LOOP === filter);
+
+            document.getElementById('pcnCount').textContent = filtered.length.toLocaleString();
+            const totalM = filtered.reduce((s, f) => s + (f.properties._length || 0), 0);
+            document.getElementById('pcnLength').textContent = formatKm(totalM);
+
+            if (!layerVisible.pcn || filtered.length === 0) return;
+
+            const layer = L.geoJSON({ type: 'FeatureCollection', features: filtered }, {
+                style: (feature) => ({
+                    color: getPCNColor(feature.properties.PCN_LOOP),
+                    weight: 3.5,
+                    opacity: 0.85,
+                    dashArray: '6 4',  // dashed line — visually distinct from cycling paths
+                    lineCap: 'round',
+                    lineJoin: 'round'
+                }),
+                onEachFeature: (feature, l) => {
+                    const props = feature.properties;
+                    const lengthM = props._length || 0;
+                    const color = getPCNColor(props.PCN_LOOP);
+                    l.bindPopup(`
+                        <div class="info-popup">
+                            <strong>${props.PARK}</strong>
+                            <div class="meta">📏 ${lengthM.toFixed(1)} m (${formatKm(lengthM)} km)</div>
+                            <span class="agency-tag" style="background:${color}">
+                                ${props.PCN_LOOP}
+                            </span>
+                        </div>
+                    `);
+                    l.on('mouseover', () => l.setStyle({ weight: 5.5, opacity: 1 }));
+                    l.on('mouseout', () => layer.resetStyle(l));
+                }
+            });
+            pcnLayer = layer.addTo(map);
+
+            if (filter !== 'all' && !cyclingLayer) {
+                try { map.fitBounds(layer.getBounds(), { padding: [60, 60], maxZoom: 17 }); }
+                catch (e) {}
+            }
+        }
+
+        function renderAll() {
+            renderCyclingLayer();
+            renderPCNLayer();
         }
 
         // ============================================================
@@ -759,7 +972,7 @@
         }
 
         // ============================================================
-        // LOAD DATA
+        // LOAD DATA — both files in parallel, each handled independently
         // ============================================================
         function formatDate(httpDate) {
             if (!httpDate) return null;
@@ -770,49 +983,94 @@
         }
 
         async function loadData() {
-            showLoader('Loading cycling paths…');
-            try {
-                const geojson = await fetchCyclingData();
-                allFeatures = geojson.features;
-                populateDropdown(allFeatures);
-                updateMap('all');
+            showLoader('Loading map data…');
 
-                const dateStr = formatDate(geojson._lastModified);
-                const bannerText = dateStr
-                    ? `✓ ${allFeatures.length.toLocaleString()} paths · Updated ${dateStr}`
-                    : `✓ ${allFeatures.length.toLocaleString()} paths loaded`;
-                showBanner(bannerText, false);
-                console.log(`✅ Loaded ${allFeatures.length} paths from ${DATA_FILE}`);
-            } catch (err) {
-                console.error('⚠️ Data load failed:', err);
-                allFeatures = FALLBACK_DATA.features;
-                populateDropdown(allFeatures);
-                updateMap('all');
-                showBanner(
-                    `⚠ Data file missing — showing ${allFeatures.length} sample paths. ` +
-                    `Upload <code style="background:rgba(0,0,0,0.06);padding:1px 4px;border-radius:3px;font-size:11px;">${DATA_FILE}</code> to fix.`,
-                    true
-                );
-            } finally {
-                hideLoader();
+            // settle:false equivalent — handle each independently
+            const cyclingP = fetchGeoJsonFile(DATA_FILES.cycling, normalizeCyclingFeature);
+            const pcnP     = fetchGeoJsonFile(DATA_FILES.pcn, normalizePCNFeature);
+
+            const [cyclingResult, pcnResult] = await Promise.allSettled([cyclingP, pcnP]);
+
+            // CYCLING
+            if (cyclingResult.status === 'fulfilled') {
+                cyclingFeatures = cyclingResult.value.features;
+                console.log(`✅ Cycling paths: ${cyclingFeatures.length} loaded`);
+            } else {
+                console.error('⚠️ Cycling data failed:', cyclingResult.reason);
+                cyclingFeatures = FALLBACK_DATA.features.map(normalizeCyclingFeature);
             }
+            populateCyclingDropdown(cyclingFeatures);
+
+            // PCN
+            if (pcnResult.status === 'fulfilled') {
+                pcnFeatures = pcnResult.value.features;
+                console.log(`✅ Park connectors: ${pcnFeatures.length} loaded`);
+            } else {
+                console.error('⚠️ PCN data failed:', pcnResult.reason);
+                pcnFeatures = [];
+            }
+            populatePCNDropdown(pcnFeatures);
+
+            // Banner
+            const cyclingOK = cyclingResult.status === 'fulfilled';
+            const pcnOK = pcnResult.status === 'fulfilled';
+            if (cyclingOK && pcnOK) {
+                const dateStr = formatDate(cyclingResult.value._lastModified);
+                showBanner(
+                    `✓ ${cyclingFeatures.length.toLocaleString()} cycling paths + ${pcnFeatures.length.toLocaleString()} PCN segments` +
+                    (dateStr ? ` · Updated ${dateStr}` : ''),
+                    false
+                );
+            } else if (cyclingOK && !pcnOK) {
+                showBanner(`⚠ Cycling paths loaded — park_connectors.geojson missing`, true);
+            } else if (!cyclingOK && pcnOK) {
+                showBanner(`⚠ Park connectors loaded — cycling_paths.geojson missing (using sample)`, true);
+            } else {
+                showBanner(`⚠ Both data files missing. Showing sample data only.`, true);
+            }
+
+            renderAll();
+            hideLoader();
         }
 
         // ============================================================
         // WIRE UP CONTROLS
         // ============================================================
         function wireUpControls() {
-            const selectEl = document.getElementById('districtFilter');
+            const cyclingFilter = document.getElementById('districtFilter');
+            const pcnFilter = document.getElementById('pcnLoopFilter');
+            const cyclingToggle = document.getElementById('cyclingToggle');
+            const pcnToggle = document.getElementById('pcnToggle');
             const panel = document.getElementById('panel');
 
-            selectEl.addEventListener('change', (e) => {
-                updateMap(e.target.value);
+            cyclingFilter.addEventListener('change', (e) => {
+                filterValue.cycling = e.target.value;
+                renderCyclingLayer();
                 if (window.innerWidth <= 720) panel.classList.remove('expanded');
             });
 
+            pcnFilter.addEventListener('change', (e) => {
+                filterValue.pcn = e.target.value;
+                renderPCNLayer();
+                if (window.innerWidth <= 720) panel.classList.remove('expanded');
+            });
+
+            cyclingToggle.addEventListener('change', (e) => {
+                layerVisible.cycling = e.target.checked;
+                renderCyclingLayer();
+            });
+
+            pcnToggle.addEventListener('change', (e) => {
+                layerVisible.pcn = e.target.checked;
+                renderPCNLayer();
+            });
+
             document.getElementById('resetBtn').addEventListener('click', () => {
-                selectEl.value = 'all';
-                updateMap('all');
+                cyclingFilter.value = 'all'; filterValue.cycling = 'all';
+                pcnFilter.value = 'all';     filterValue.pcn = 'all';
+                cyclingToggle.checked = true; layerVisible.cycling = true;
+                pcnToggle.checked = true;     layerVisible.pcn = true;
+                renderAll();
                 map.setView([1.3521, 103.8198], 12);
             });
 
