@@ -498,15 +498,83 @@
             if (!resp.ok) {
                 throw new Error(`Could not load ${DATA_FILE} (HTTP ${resp.status})`);
             }
-            // Capture last-modified date from response headers (used in banner)
             const lastMod = resp.headers.get('last-modified');
             const geojson = await resp.json();
 
             if (!geojson.type || !Array.isArray(geojson.features)) {
                 throw new Error('Invalid GeoJSON structure');
             }
+
+            // Normalize each feature so the rest of the code doesn't have to
+            // care which schema/format the file uses
+            geojson.features = geojson.features.map(normalizeFeature);
             geojson._lastModified = lastMod;
             return geojson;
+        }
+
+        // ============================================================
+        // PROPERTY NORMALIZATION
+        // The real data.gov.sg cycling dataset wraps fields in an HTML table
+        // inside a "Description" field. Other datasets use flat properties.
+        // This extracts a consistent shape regardless of input format.
+        // ============================================================
+        function parseDescriptionHtml(html) {
+            // Description is an HTML table like:
+            //   <th>CYL_PATH</th><td>Toa Payoh</td>
+            //   <th>AGENCY_MAINT</th><td>Land Transport Authority</td>
+            const out = {};
+            if (!html || typeof html !== 'string') return out;
+            const re = /<th[^>]*>\s*([^<]+?)\s*<\/th>\s*<td[^>]*>\s*([^<]*?)\s*<\/td>/gi;
+            let m;
+            while ((m = re.exec(html)) !== null) {
+                out[m[1].trim()] = m[2].trim();
+            }
+            return out;
+        }
+
+        function normalizeFeature(feature) {
+            const p = feature.properties || {};
+            // If Description exists (real LTA dataset), parse the HTML table out
+            const fromDesc = p.Description ? parseDescriptionHtml(p.Description) : {};
+
+            // Build a unified properties object. Prefer flat fields, fall back
+            // to parsed Description fields, then fall back to other common names.
+            const merged = {
+                ...p,
+                CYL_PATH: p.CYL_PATH || fromDesc.CYL_PATH || p.NAME || p.name || null,
+                AGENCY_MAINT: p.AGENCY_MAINT || fromDesc.AGENCY_MAINT || null,
+                'SHAPE_1.LEN': p['SHAPE_1.LEN'] || fromDesc['SHAPE_1.LEN'] || null
+            };
+
+            // If still no length, compute it from the geometry
+            if (!merged['SHAPE_1.LEN']) {
+                merged['SHAPE_1.LEN'] = computeGeometryLength(feature.geometry);
+            }
+            return { ...feature, properties: merged };
+        }
+
+        // Haversine distance between two [lng, lat] points, in metres
+        function haversineMeters(a, b) {
+            const R = 6371000;
+            const toRad = (d) => d * Math.PI / 180;
+            const dLat = toRad(b[1] - a[1]);
+            const dLng = toRad(b[0] - a[0]);
+            const lat1 = toRad(a[1]);
+            const lat2 = toRad(b[1]);
+            const h = Math.sin(dLat/2)**2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng/2)**2;
+            return 2 * R * Math.asin(Math.sqrt(h));
+        }
+
+        function computeGeometryLength(geom) {
+            if (!geom) return 0;
+            const sumLine = (coords) => {
+                let total = 0;
+                for (let i = 1; i < coords.length; i++) total += haversineMeters(coords[i-1], coords[i]);
+                return total;
+            };
+            if (geom.type === 'LineString') return sumLine(geom.coordinates);
+            if (geom.type === 'MultiLineString') return geom.coordinates.reduce((s, c) => s + sumLine(c), 0);
+            return 0; // Point, Polygon etc. → no length
         }
 
         // ============================================================
@@ -631,21 +699,37 @@
                     lineCap: 'round',
                     lineJoin: 'round'
                 }),
+                // For Point features (e.g. fallback if a point dataset is loaded),
+                // render small coloured circles rather than default pin markers.
+                pointToLayer: (feature, latlng) => {
+                    return L.circleMarker(latlng, {
+                        radius: 5,
+                        color: getAgencyColor(feature.properties.AGENCY_MAINT),
+                        fillColor: getAgencyColor(feature.properties.AGENCY_MAINT),
+                        fillOpacity: 0.7,
+                        weight: 2
+                    });
+                },
                 onEachFeature: (feature, layer) => {
                     const props = feature.properties;
                     const lengthM = getLen(props);
                     const color = AGENCY_COLORS[getAgencyKey(props.AGENCY_MAINT)];
+                    const lengthLine = lengthM > 0
+                        ? `<div class="meta">📏 ${lengthM.toFixed(1)} m (${formatKm(lengthM)} km)</div>`
+                        : '';
                     layer.bindPopup(`
                         <div class="info-popup">
-                            <strong>${props.CYL_PATH || 'Unnamed Path'}</strong>
-                            <div class="meta">📏 ${lengthM.toFixed(1)} m (${formatKm(lengthM)} km)</div>
+                            <strong>${props.CYL_PATH || props.NAME || 'Unnamed'}</strong>
+                            ${lengthLine}
                             <span class="agency-tag" style="background:${color}">
                                 ${getAgencyShort(props.AGENCY_MAINT)}
                             </span>
                         </div>
                     `);
-                    layer.on('mouseover', () => layer.setStyle({ weight: 6, opacity: 1 }));
-                    layer.on('mouseout', () => geoJsonLayer.resetStyle(layer));
+                    if (layer.setStyle) {
+                        layer.on('mouseover', () => layer.setStyle({ weight: 6, opacity: 1 }));
+                        layer.on('mouseout', () => geoJsonLayer.resetStyle(layer));
+                    }
                 }
             });
             currentLayer = geoJsonLayer.addTo(map);
